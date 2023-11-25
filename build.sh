@@ -8,6 +8,7 @@ cd "$(dirname "$0")"
 PYTHON_VER=3.9.6
 PYTHON_PKG=python-$PYTHON_VER-macos11.pkg
 PYTHON_URI="https://www.python.org/ftp/python/$PYTHON_VER/$PYTHON_PKG"
+ENCRYPTOR_URI="https://github.com/WhatAmISupposedToPutHere/encryptor/releases/download/v0.1/encryptor.tar.gz"
 
 M1N1="$PWD/m1n1"
 ARTWORK="$PWD/artwork"
@@ -44,6 +45,7 @@ echo "Downloading installer components..."
 cd "$DL"
 
 wget -Nc "$PYTHON_URI"
+wget -Nc "$ENCRYPTOR_URI"
 
 echo "Building m1n1..."
 
@@ -52,7 +54,7 @@ make -C "$M1N1" RELEASE=1 CHAINLOADING=1 -j4
 echo "Copying files..."
 
 cp -r "$SRC"/* "$PACKAGE/"
-rm "$PACKAGE/asahi_firmware"
+rm -r "$PACKAGE/asahi_firmware"
 cp -r "$AFW" "$PACKAGE/"
 cp "$ARTWORK/logos/icns/AsahiLinux_logomark.icns" "$PACKAGE/logo.icns"
 mkdir -p "$PACKAGE/boot"
@@ -63,7 +65,7 @@ echo "Extracting Python framework..."
 mkdir -p "$PACKAGE/Frameworks/Python.framework"
 
 7z x -so "$DL/$PYTHON_PKG" Python_Framework.pkg/Payload | zcat | \
-    cpio -i -D "$PACKAGE/Frameworks/Python.framework"
+    gnucpio -i -D "$PACKAGE/Frameworks/Python.framework"
 
 
 cd "$PACKAGE/Frameworks/Python.framework/Versions/Current"
@@ -81,7 +83,7 @@ cd python3.*
 rm -rf test ensurepip idlelib
 cd lib-dynload
 rm -f _test* _tkinter*
-    
+
 
 echo "Copying certificates..."
 
@@ -91,6 +93,8 @@ cp "$certs" "$PACKAGE/Frameworks/Python.framework/Versions/Current/etc/openssl/c
 echo "Packaging installer..."
 
 cd "$PACKAGE"
+
+tar xf "$DL/encryptor.tar.gz"
 
 echo "$VER" > version.tag
 

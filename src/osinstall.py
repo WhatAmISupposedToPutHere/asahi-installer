@@ -6,7 +6,7 @@ from util import *
 
 class OSInstaller(PackageInstaller):
     PART_ALIGNMENT = 1024 * 1024
-    def __init__(self, dutil, data, template):
+    def __init__(self, dutil, data, template, fde):
         super().__init__()
         self.dutil = dutil
         self.data = data
@@ -16,6 +16,7 @@ class OSInstaller(PackageInstaller):
         self.efi_part = None
         self.idata_targets = []
         self.install_size = self.min_size
+        self.fde = fde
 
     @property
     def default_os_name(self):
@@ -117,6 +118,38 @@ class OSInstaller(PackageInstaller):
             ucache.flush_progress()
 
     def install(self, stub_ins):
+        if self.fde:
+            p_progress("Extracting OS image ...")
+            for part in self.template["partitions"]:
+                image = part.get("image", None)
+                if image is None:
+                    continue
+                zinfo = self.pkg.getinfo(image)
+                with self.pkg.open(image) as sfd, \
+                     open(image, "wb") as dfd:
+                    self.fdcopy(sfd, dfd, zinfo.file_size)
+            p_progress("Encrypting OS image ...")
+            args = [
+                "./encryptor/qemu-system-aarch64",
+                "-nographic",
+                "-L", "./encryptor/qemu/",
+                "-chardev", "stdio,id=term0",
+                "-serial", "chardev:term0",
+                "-cpu", "host",
+                "-smp", "cpus=8,sockets=1,cores=8,threads=1",
+                "-machine", "virt",
+                "-accel", "hvf",
+                "-m", "4096",
+                "-kernel", "./encryptor/vmlinuz-virt",
+                "-initrd", "./encryptor/initramfs",
+                "-device", "virtio-rng-pci",
+                "-monitor", "/dev/null",
+                "-append", "quiet",
+                "-drive", "if=virtio,format=raw,index=1,file=boot.img",
+                "-drive", "if=virtio,format=raw,index=2,file=root.img"
+            ]
+            subprocess.run(args, check=True)
+
         p_progress("Installing OS...")
         logging.info("OSInstaller.install()")
 
@@ -133,12 +166,21 @@ class OSInstaller(PackageInstaller):
             logging.info(f"Installing partition {part!r} -> {info.name}")
             image = part.get("image", None)
             if image:
-                p_plain(f"  Extracting {image} into {info.name} partition...")
+                if self.fde:
+                    p_plain(f"  Installing {image} into {info.name} partition...")
+                else:
+                    p_plain(f"  Extracting {image} into {info.name} partition...")
                 logging.info(f"Extract: {image}")
                 zinfo = self.pkg.getinfo(image)
-                with self.pkg.open(image) as sfd, \
-                    open(f"/dev/r{info.name}", "r+b") as dfd:
-                    self.fdcopy(sfd, dfd, zinfo.file_size)
+                if self.fde:
+                    with open(image, "rb") as sfd, \
+                         open(f"/dev/r{info.name}", "r+b") as dfd:
+                        self.fdcopy(sfd, dfd, zinfo.file_size)
+                else:
+                    with self.pkg.open(image) as sfd, \
+                         open(f"/dev/r{info.name}", "r+b") as dfd:
+                        self.fdcopy(sfd, dfd, zinfo.file_size)
+
                 self.flush_progress()
             source = part.get("source", None)
             if source:
